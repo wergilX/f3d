@@ -71,9 +71,8 @@
 #endif
 
 #if VTK_VERSION_NUMBER >= VTK_VERSION_CHECK(9, 2, 20220907)
-#include <vtkOrientationMarkerWidget.h>
-#else
-#include "vtkF3DOrientationMarkerWidget.h"
+#include <vtkCameraOrientationRepresentation.h>
+#include <vtkCameraOrientationWidget.h>
 #endif
 
 #if F3D_MODULE_RAYTRACING
@@ -524,33 +523,44 @@ std::string vtkF3DRenderer::GetSceneDescription()
 }
 
 //----------------------------------------------------------------------------
+void vtkF3DRenderer::UpdateAxisSize()
+{
+  if (this->AxisRepresentation )
+  {
+    int* size = this->GetSize();
+    int widgetSize = static_cast<int>(std::min(size[0], size[1]) * 0.15);
+    this->AxisRepresentation->SetSize(widgetSize, widgetSize);
+  }
+}
+
+//----------------------------------------------------------------------------
 void vtkF3DRenderer::ShowAxis(bool show)
 {
-  // Dynamic visible axis
-  // XXX this could be handled in UpdateActors
-  // but it is not needed as axis actor is not impacted by
-  // by any other parameters and require special
-  // care when destructing this renderer
   if (this->AxisVisible != show)
   {
     this->AxisWidget = nullptr;
+    this->AxisRepresentation = nullptr;
     if (show)
     {
-      assert(this->RenderWindow->GetInteractor());
-      vtkNew<vtkAxesActor> axes;
-#if VTK_VERSION_NUMBER >= VTK_VERSION_CHECK(9, 2, 20220907)
-      this->AxisWidget = vtkSmartPointer<vtkOrientationMarkerWidget>::New();
-#else
-      this->AxisWidget = vtkSmartPointer<vtkF3DOrientationMarkerWidget>::New();
-#endif
-      this->AxisWidget->SetOrientationMarker(axes);
-      this->AxisWidget->SetInteractor(this->RenderWindow->GetInteractor());
-      this->AxisWidget->SetViewport(0.85, 0.0, 1.0, 0.15);
-      this->AxisWidget->On();
-#if VTK_VERSION_NUMBER >= VTK_VERSION_CHECK(9, 2, 20220907)
-      this->AxisWidget->InteractiveOff();
-#endif
+      this->AxisRepresentation = vtkSmartPointer<vtkCameraOrientationRepresentation>::New();
+      this->AxisRepresentation->SetRenderer(this);
+      this->AxisRepresentation->AnchorToLowerRight();
+      this->AxisRepresentation->ContainerVisibilityOn();
+      auto containerProperty = this->AxisRepresentation->GetContainerProperty();
+      if (containerProperty)
+      {
+        containerProperty->SetColor(0.15, 0.15, 0.15);
+        containerProperty->SetOpacity(0.6);
+      }
+
+      this->AxisWidget = vtkSmartPointer<vtkCameraOrientationWidget>::New();
+      this->AxisWidget->SetParentRenderer(this);
+      this->AxisWidget->SetRepresentation(this->AxisRepresentation);
       this->AxisWidget->SetKeyPressActivation(false);
+      this->AxisWidget->SetProcessEvents(false);
+      this->AxisWidget->On();
+
+      this->UpdateAxisSize();
     }
 
     this->AxisVisible = show;
@@ -1825,6 +1835,8 @@ void vtkF3DRenderer::UpdateActors()
 //----------------------------------------------------------------------------
 void vtkF3DRenderer::Render()
 {
+  UpdateAxisSize();
+
   if (!this->TimerVisible)
   {
     this->Superclass::Render();
